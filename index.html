@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ProgressPulse - Wistia Video Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://fast.wistia.com/assets/external/E-v1.js" async></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 750px;
+      margin: 40px 20px;
+      padding: 30px;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: #1a1a1a;
+    }
+
+    p.subtitle {
+      text-align: center;
+      font-size: 16px;
+      color: #666;
+      margin-top: 0;
+    }
+
+    .video-wrapper {
+      margin-top: 20px;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    .wistia_embed {
+      width: 100%;
+      border-radius: 12px;
+    }
+
+    .wistia-progress-container {
+      width: 100%;
+      background-color: #e0e0e0;
+      border-radius: 50px;
+      height: 14px;
+      margin-top: 25px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .wistia-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #00c6ff, #0072ff);
+      border-radius: 50px;
+      transition: width 0.5s ease-in-out;
+    }
+
+    .wistia-progress-percentage {
+      margin-top: 15px;
+      font-weight: 600;
+      font-size: 16px;
+      text-align: center;
+      color: #333;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>ProgressPulse</h1>
+    <p class="subtitle">Track your real-time progress as you watch this video.</p>
+
+    <div class="video-wrapper">
+      <div class="wistia_embed wistia_async_q7o9ffuuiy" style="height: 360px;"></div>
+    </div>
+  </div>
+
+  <script>
+    function createProgressTracker(video) {
+      const videoId = video.hashedId();
+      const duration = Math.floor(video.duration());
+      const INTERVAL_KEY = `intervals_${videoId}`;
+      const LAST_TIME_KEY = `lastTime_${videoId}`;
+      const PROGRESS_KEY = `progress_${videoId}`;
+  
+      const wistiaContainer = document.querySelector(`.wistia_embed.wistia_async_${videoId}`);
+      if (!wistiaContainer) return;
+  
+      // Create UI Elements
+      const progressContainer = document.createElement('div');
+      progressContainer.className = 'wistia-progress-container';
+  
+      const progressBar = document.createElement('div');
+      progressBar.className = 'wistia-progress-bar';
+  
+      const percentageText = document.createElement('div');
+      percentageText.className = 'wistia-progress-percentage';
+  
+      progressContainer.appendChild(progressBar);
+      wistiaContainer.insertAdjacentElement('afterend', progressContainer);
+      progressContainer.insertAdjacentElement('afterend', percentageText);
+  
+      // Load saved intervals
+      let watchedIntervals = JSON.parse(localStorage.getItem(INTERVAL_KEY)) || [];
+      let lastSavedTime = parseFloat(localStorage.getItem(LAST_TIME_KEY)) || 0;
+      let lastProgress = parseFloat(localStorage.getItem(PROGRESS_KEY)) || 0;
+  
+      function mergeIntervals(intervals) {
+        if (!intervals.length) return [];
+        intervals.sort((a, b) => a[0] - b[0]);
+        const merged = [intervals[0]];
+  
+        for (let i = 1; i < intervals.length; i++) {
+          const [start, end] = intervals[i];
+          const last = merged[merged.length - 1];
+  
+          if (start <= last[1]) {
+            last[1] = Math.max(last[1], end);
+          } else {
+            merged.push([start, end]);
+          }
+        }
+  
+        return merged;
+      }
+  
+      function getUniqueSeconds(intervals) {
+        return intervals.reduce((sum, [start, end]) => sum + (end - start), 0);
+      }
+  
+      function updateProgress() {
+        const currentTime = Math.floor(video.time());
+  
+        if (currentTime !== lastSavedTime) {
+          // Add a new interval
+          watchedIntervals.push([lastSavedTime, currentTime]);
+          watchedIntervals = mergeIntervals(watchedIntervals);
+  
+          const uniqueSeconds = getUniqueSeconds(watchedIntervals);
+          const progressPercent = Math.min((uniqueSeconds / duration) * 100, 100);
+  
+          // Save state
+          localStorage.setItem(INTERVAL_KEY, JSON.stringify(watchedIntervals));
+          localStorage.setItem(LAST_TIME_KEY, currentTime.toString());
+          localStorage.setItem(PROGRESS_KEY, progressPercent.toFixed(2));
+  
+          // Update UI
+          progressBar.style.width = `${progressPercent}%`;
+          percentageText.textContent = `Progress: ${Math.floor(progressPercent)}%`;
+  
+          lastSavedTime = currentTime;
+          lastProgress = progressPercent;
+        }
+      }
+  
+      return {
+        init: function () {
+          if (lastSavedTime > 0 && lastSavedTime < duration - 5) {
+            video.time(lastSavedTime);
+          }
+  
+          progressBar.style.width = `${lastProgress}%`;
+          percentageText.textContent = `Progress: ${Math.floor(lastProgress)}%`;
+  
+          setInterval(updateProgress, 1000);
+        }
+      };
+    }
+  
+    function initWistiaProgressTracker() {
+      window._wq = window._wq || [];
+      window._wq.push({
+        id: '_all',
+        onReady: function (video) {
+          const tracker = createProgressTracker(video);
+          tracker.init();
+        }
+      });
+    }
+  
+    document.addEventListener('DOMContentLoaded', initWistiaProgressTracker);
+  </script>
+  
+  
+</body>
+</html>
